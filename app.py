@@ -1,49 +1,44 @@
 import cv2
-import mediapipe as mp
 import streamlit as st
 
-# Inicializa o MediaPipe Face Mesh
-mp_face_mesh = mp.solutions.face_mesh
+# Função para detectar faces
+def detect_faces(frame, face_cascade):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = face_cascade.detectMultiScale(gray, scaleFactor=1.1, minNeighbors=5, minSize=(30, 30))
+
+    for (x, y, w, h) in faces:
+        cv2.rectangle(frame, (x, y), (x+w, y+h), (0, 255, 0), 2)
+
+    return frame, len(faces)
 
 # Interface do Streamlit
-st.title("Detecção Facial com Mediapipe")
+st.title("Detecção Facial com OpenCV")
 st.write("Ative sua webcam para visualizar a detecção facial em tempo real.")
 
 run_camera = st.checkbox("Ativar Webcam")
 FRAME_WINDOW = st.image([])
 
 if run_camera:
-    # Captura de vídeo da webcam
+    # Carrega o modelo de detecção facial do OpenCV
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+
+    # Inicia a captura da webcam
     camera = cv2.VideoCapture(0)
 
     if not camera.isOpened():
         st.error("Não foi possível acessar a webcam.")
     else:
-        with mp_face_mesh.FaceMesh(
-            static_image_mode=False,
-            max_num_faces=1,
-            min_detection_confidence=0.5,
-            min_tracking_confidence=0.5
-        ) as face_mesh:
-            while run_camera:
-                ret, frame = camera.read()
-                if not ret:
-                    st.error("Erro ao capturar a imagem da câmera.")
-                    break
+        while run_camera:
+            ret, frame = camera.read()
+            if not ret:
+                st.error("Erro ao capturar a imagem da câmera.")
+                break
 
-                # Converte BGR para RGB
-                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            # Detecta faces no frame
+            frame, face_count = detect_faces(frame, face_cascade)
 
-                # Processa o frame com o Face Mesh
-                results = face_mesh.process(rgb_frame)
+            # Exibe a imagem com as detecções
+            FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB), channels="RGB")
+            st.write(f"Faces detectadas: {face_count}")
 
-                if results.multi_face_landmarks:
-                    for landmarks in results.multi_face_landmarks:
-                        for point in landmarks.landmark:
-                            x = int(point.x * frame.shape[1])
-                            y = int(point.y * frame.shape[0])
-                            cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
-
-                FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-
-            camera.release()
+        camera.release()

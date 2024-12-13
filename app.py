@@ -1,82 +1,49 @@
 import cv2
-import dlib
-import math
-import numpy as np
+import mediapipe as mp
 import streamlit as st
 
-# Caminho para o preditor de landmarks
-landmark_predictor_path = "data/shape_predictor_68_face_landmarks.dat"
+# Inicializa o MediaPipe Face Mesh
+mp_face_mesh = mp.solutions.face_mesh
 
-# Funções auxiliares
-def shape_to_np(shape):
-    coords = np.zeros((68, 2), dtype=int)
-    for i in range(0, 68):
-        coords[i] = (shape.part(i).x, shape.part(i).y)
-    return coords
+# Interface do Streamlit
+st.title("Detecção Facial com Mediapipe")
+st.write("Ative sua webcam para visualizar a detecção facial em tempo real.")
 
-def euclidean_distance(p1, p2):
-    return math.sqrt((p1[0] - p2[0])**2 + (p1[1] - p2[1])**2)
-
-def process_frame(frame, detector, predictor):
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    faces = detector(gray, 1)
-
-    for face in faces:
-        shape = predictor(gray, face)
-        landmarks = shape_to_np(shape)
-
-        chin = landmarks[8]
-        nose_tip = landmarks[33]
-        left_jaw = landmarks[0]
-        right_jaw = landmarks[16]
-
-        face_width = euclidean_distance(left_jaw, right_jaw)
-        face_height = euclidean_distance(chin, nose_tip)
-
-        for (x, y) in landmarks:
-            cv2.circle(frame, (x, y), 2, (0, 255, 0), -1)
-
-        cv2.line(frame, (nose_tip[0], nose_tip[1]), (chin[0], chin[1]), (255, 0, 0), 2)
-
-        info_text_1 = f"Largura da face: {face_width:.2f}px"
-        info_text_2 = f"Altura (nariz-queixo): {face_height:.2f}px"
-
-        cv2.putText(frame, info_text_1, (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 255, 255), 1)
-        cv2.putText(frame, info_text_2, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 
-                    0.5, (0, 255, 255), 1)
-    
-    return frame
-
-# Interface Streamlit
-st.title("Detecção Facial em Tempo Real")
-st.write("Use sua webcam para visualizar a detecção de landmarks faciais.")
-
-# Inicializa o detector e o preditor
-detector = dlib.get_frontal_face_detector()
-predictor = dlib.shape_predictor(landmark_predictor_path)
-
-# Configurações da câmera
-run_camera = st.checkbox("Ativar webcam")
-FRAME_WINDOW = st.image([])  # Placeholder para exibir os frames
+run_camera = st.checkbox("Ativar Webcam")
+FRAME_WINDOW = st.image([])
 
 if run_camera:
-    camera = cv2.VideoCapture(0)  # Use 0 para a câmera padrão
+    # Captura de vídeo da webcam
+    camera = cv2.VideoCapture(0)
+
     if not camera.isOpened():
         st.error("Não foi possível acessar a webcam.")
     else:
-        while run_camera:
-            ret, frame = camera.read()
-            if not ret:
-                st.error("Falha ao capturar o frame da câmera.")
-                break
+        with mp_face_mesh.FaceMesh(
+            static_image_mode=False,
+            max_num_faces=1,
+            min_detection_confidence=0.5,
+            min_tracking_confidence=0.5
+        ) as face_mesh:
+            while run_camera:
+                ret, frame = camera.read()
+                if not ret:
+                    st.error("Erro ao capturar a imagem da câmera.")
+                    break
 
-            frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-            processed_frame = process_frame(frame, detector, predictor)
-            FRAME_WINDOW.image(processed_frame)
+                # Converte BGR para RGB
+                rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
 
-            # Permite desligar a câmera ao desmarcar o checkbox
-            if not st.session_state.get("run_camera"):
-                break
+                # Processa o frame com o Face Mesh
+                results = face_mesh.process(rgb_frame)
 
-        camera.release()
+                if results.multi_face_landmarks:
+                    for landmarks in results.multi_face_landmarks:
+                        for point in landmarks.landmark:
+                            x = int(point.x * frame.shape[1])
+                            y = int(point.y * frame.shape[0])
+                            cv2.circle(frame, (x, y), 1, (0, 255, 0), -1)
+
+                FRAME_WINDOW.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+
+            camera.release()
